@@ -48,12 +48,15 @@ app.post('/api/parse_publication', async (req, res) => {
     const journals = await dbAll('SELECT id, name FROM Journals ORDER BY name');
     const journalNames = journals.map((journal) => journal.name).join(', ');
     const systemPrompt = `
-      Você é um assistente que extrai metadados de publicações científicas.
-      Utilize somente os seguintes nomes de revistas ao definir "journal_name": ${journalNames || 'nenhuma revista cadastrada'}.
-      Responda APENAS com um JSON minificado no formato:
-      {"authors": "...", "title": "...", "year": 2024, "doi": "...", "journal_name": "..."}
-      - Use null para qualquer campo desconhecido.
-      - Se a revista não estiver na lista fornecida, defina "journal_name": null.
+      Você é um assistente de biblioteconomia. Extraia os campos: authors, title, year, doi, e journal_name do texto do usuário.
+      Responda apenas com um JSON minificado no formato {"authors": "...", "title": "...", "year": 2024, "doi": "...", "journal_name": "..."}.
+      O usuário fornecerá uma lista de nomes de revistas válidas: ${journalNames || 'nenhuma revista cadastrada'}.
+      "journal_name" deve ser um nome dessa lista ou null caso não haja correspondência exata.
+      REGRA CRÍTICA DE FORMATAÇÃO DE AUTORES: o campo "authors" deve seguir APA 7 (Lastname, F. M.).
+      1. Sempre use "Sobrenome, I. N." (ex.: Sarantopoulos, A.).
+      2. Separe autores por vírgula e use "&" antes do último (ex.: Castro, C., Leiva, V., & Minatogawa, V.).
+      3. Listar apenas os nomes fornecidos.
+      4. Se faltar algum dado, use null.
     `;
 
     const completion = await openai.chat.completions.create({
