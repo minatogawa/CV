@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Registrar Revista</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+  <div class="container py-5">
+    <a class="btn btn-link mb-3" href="/index.html">&larr; Voltar ao Menu</a>
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="card-title mb-4">Registrar Revista</h2>
+        <div id="alert-placeholder"></div>
+        <form id="journal-form" novalidate>
+          <div class="mb-3">
+            <label class="form-label">Tipo</label>
+            <select class="form-select" name="type" id="journal-type-select" required>
+              <option value="">Selecione...</option>
+              <option value="WOS">WOS</option>
+              <option value="SCOPUS">SCOPUS</option>
+            </select>
+          </div>
+          <div id="dynamic-form-fields" class="d-none">
+            <div class="mb-3">
+              <label class="form-label">Nome da Revista</label>
+              <input type="text" class="form-control" name="name" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">ISSN</label>
+              <input type="text" class="form-control" name="issn">
+            </div>
+            <div class="mb-3">
+              <label class="form-label" id="metric-label">Impact Factor</label>
+              <input type="number" step="0.01" class="form-control" name="impact_factor">
+            </div>
+            <div class="mb-3">
+              <label class="form-label" id="quartile-label">Quartil</label>
+              <input type="text" class="form-control" name="quartile" placeholder="Q1, Q2...">
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="image_url">URL da Foto da Revista</label>
+              <input type="text" class="form-control" id="image_url" name="image_url" placeholder="https://exemplo.com/imagem.jpg">
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary">Salvar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <script>
+    const form = document.getElementById('journal-form');
+    const alertPlaceholder = document.getElementById('alert-placeholder');
+
+    function showAlert(message, type = 'success') {
+      alertPlaceholder.innerHTML = `<div class="alert alert-${type}" role="alert">${message}</div>`;
+    }
+
+    const typeSelect = document.getElementById('journal-type-select');
+    const dynamicFields = document.getElementById('dynamic-form-fields');
+    const metricLabel = document.getElementById('metric-label');
+    const quartileLabel = document.getElementById('quartile-label');
+
+    typeSelect.addEventListener('change', () => {
+      const value = typeSelect.value;
+      if (value === 'WOS') {
+        metricLabel.textContent = 'Impact Factor';
+        quartileLabel.textContent = 'Quartil JCR';
+        dynamicFields.classList.remove('d-none');
+      } else if (value === 'SCOPUS') {
+        metricLabel.textContent = 'CiteScore';
+        quartileLabel.textContent = 'Quartil SJR';
+        dynamicFields.classList.remove('d-none');
+      } else {
+        dynamicFields.classList.add('d-none');
+      }
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const formData = new FormData(form);
+      const payload = Object.fromEntries(formData.entries());
+      if (!payload.image_url) {
+        payload.image_url = null;
+      }
+
+      try {
+        const response = await fetch('/api/journals', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          throw new Error('Erro ao salvar revista');
+        }
+
+        form.reset();
+        showAlert('Revista salva com sucesso!');
+      } catch (error) {
+        showAlert(error.message, 'danger');
+      }
+    });
+  </script>
+</body>
+</html>

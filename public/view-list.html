@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lista de Publicações</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    .publication-card-img {
+      width: 100px;
+      height: 100px;
+      object-fit: cover;
+      border-radius: 0.5rem;
+    }
+  </style>
+</head>
+<body class="bg-light">
+  <div class="container py-5">
+    <a class="btn btn-link mb-3" href="/index.html">&larr; Voltar ao Menu</a>
+    <h2 class="mb-3">Publicações por Base</h2>
+    <button id="export-pdf-button" class="btn btn-primary mb-3">Exportar para PDF</button>
+    <div id="list-alert"></div>
+    <div class="row g-4">
+      <div class="col-md-6">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <h3 class="card-title">Publicações WOS</h3>
+            <div id="wos-list" class="mt-3"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <h3 class="card-title">Publicações SCOPUS</h3>
+            <div id="scopus-list" class="mt-3"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="edit-publication-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Editar Publicação</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="edit-publication-form" novalidate>
+            <div class="mb-3">
+              <label class="form-label" for="edit-authors">Autores</label>
+              <input type="text" class="form-control" id="edit-authors" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="edit-title">Título</label>
+              <input type="text" class="form-control" id="edit-title" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="edit-year">Ano</label>
+              <input type="number" class="form-control" id="edit-year" min="1900" max="2100" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="edit-doi">DOI</label>
+              <input type="text" class="form-control" id="edit-doi">
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="edit-journal_id">Revista</label>
+              <select class="form-select" id="edit-journal_id"></select>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-primary" id="update-publication-button">Salvar Alterações</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    const wosList = document.getElementById('wos-list');
+    const scopusList = document.getElementById('scopus-list');
+    const listAlert = document.getElementById('list-alert');
+    const exportButton = document.getElementById('export-pdf-button');
+    const editModalElement = document.getElementById('edit-publication-modal');
+    const editModal = new bootstrap.Modal(editModalElement);
+    const editForm = document.getElementById('edit-publication-form');
+    const updateButton = document.getElementById('update-publication-button');
+    const editJournalSelect = document.getElementById('edit-journal_id');
+
+    const placeholderImg = 'https://via.placeholder.com/100?text=Revista';
+
+    let journalsCache = [];
+    let publicationsCache = [];
+
+    function showAlert(message, type = 'success') {
+      listAlert.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show" role="alert">
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>`;
+    }
+
+    function populateJournalOptions(selectElement, selected = '') {
+      selectElement.innerHTML = '';
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'Selecione uma revista...';
+      placeholder.disabled = true;
+      placeholder.selected = true;
+      selectElement.appendChild(placeholder);
+
+      journalsCache.forEach((journal) => {
+        const option = document.createElement('option');
+        option.value = String(journal.id);
+        option.textContent = journal.name;
+        selectElement.appendChild(option);
+      });
+
+      if (selected && [...selectElement.options].some((opt) => opt.value === selected)) {
+        selectElement.value = selected;
+      } else {
+        selectElement.value = '';
+      }
+    }
+
+    function buildPublicationCard(publication) {
+      const type = publication.journal_type || null;
+      let metricLabel = 'Métrica';
+      let quartileLabel = 'Quartil';
+
+      if (type === 'WOS') {
+        metricLabel = 'Impact Factor';
+        quartileLabel = 'Quartil JCR';
+      } else if (type === 'SCOPUS') {
+        metricLabel = 'CiteScore';
+        quartileLabel = 'Quartil SJR';
+      }
+
+      const card = document.createElement('div');
+      card.className = 'card mb-3 shadow-sm';
+      card.innerHTML = `
+        <div class="row g-0 align-items-center">
+          <div class="col-auto p-3">
+            <img class="publication-card-img" src="${publication.journal_image_url || placeholderImg}" alt="Imagem da revista">
+          </div>
+          <div class="col">
+            <div class="card-body">
+              <p class="card-text mb-1"><strong>${publication.authors}</strong> (${publication.year})</p>
+              <h5 class="card-title">${publication.title}</h5>
+              <p class="card-text mb-1"><em>${publication.journal_name || 'Revista Desconhecida'}</em></p>
+              <p class="card-text mb-1">${publication.doi ? `DOI: ${publication.doi}` : ''}</p>
+              <div class="d-flex gap-2 mb-2">
+                <span class="badge bg-secondary">${quartileLabel}: ${publication.journal_quartile || 'N/A'}</span>
+                <span class="badge bg-info text-dark">${metricLabel}: ${publication.journal_impact_factor ?? 'N/A'}</span>
+              </div>
+              <div>
+                <button class="btn btn-sm btn-outline-primary me-2 edit-pub-btn" data-id="${publication.id}">Editar</button>
+                <button class="btn btn-sm btn-outline-danger delete-pub-btn" data-id="${publication.id}">Excluir</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      return card;
+    }
+
+    function renderPublications() {
+      wosList.innerHTML = '';
+      scopusList.innerHTML = '';
+
+      const wos = publicationsCache.filter((pub) => pub.journal_type === 'WOS');
+      const scopus = publicationsCache.filter((pub) => pub.journal_type === 'SCOPUS');
+
+      if (!wos.length) {
+        wosList.innerHTML = '<p class="text-muted">Nenhuma publicação WOS cadastrada.</p>';
+      } else {
+        wos.forEach((pub) => wosList.appendChild(buildPublicationCard(pub)));
+      }
+
+      if (!scopus.length) {
+        scopusList.innerHTML = '<p class="text-muted">Nenhuma publicação SCOPUS cadastrada.</p>';
+      } else {
+        scopus.forEach((pub) => scopusList.appendChild(buildPublicationCard(pub)));
+      }
+    }
+
+    async function loadPublications() {
+      try {
+        const response = await fetch('/api/publications_list');
+        publicationsCache = await response.json();
+        renderPublications();
+      } catch (error) {
+        showAlert('Erro ao carregar publicações.', 'danger');
+      }
+    }
+
+    async function loadJournals() {
+      try {
+        const response = await fetch('/api/journals');
+        journalsCache = await response.json();
+        populateJournalOptions(editJournalSelect);
+      } catch (error) {
+        showAlert('Erro ao carregar revistas.', 'danger');
+      }
+    }
+
+    async function openEditModal(id) {
+      try {
+        const response = await fetch(`/api/publications/${id}`);
+        if (!response.ok) {
+          throw new Error('Publicação não encontrada');
+        }
+        const publication = await response.json();
+        document.getElementById('edit-authors').value = publication.authors || '';
+        document.getElementById('edit-title').value = publication.title || '';
+        document.getElementById('edit-year').value = publication.year || '';
+        document.getElementById('edit-doi').value = publication.doi || '';
+        const selected = publication.journal_id != null ? String(publication.journal_id) : '';
+        populateJournalOptions(editJournalSelect, selected);
+        updateButton.dataset.id = publication.id;
+        editModal.show();
+      } catch (error) {
+        showAlert('Não foi possível carregar a publicação para edição.', 'danger');
+      }
+    }
+
+    async function updatePublication(id) {
+      const selectedJournalId = editJournalSelect.value;
+      if (!selectedJournalId) {
+        showAlert('Selecione uma revista antes de salvar.', 'warning');
+        return;
+      }
+
+      const payload = {
+        authors: document.getElementById('edit-authors').value.trim(),
+        title: document.getElementById('edit-title').value.trim(),
+        year: document.getElementById('edit-year').value ? Number(document.getElementById('edit-year').value) : null,
+        doi: document.getElementById('edit-doi').value.trim() || null,
+        journal_id: Number(selectedJournalId)
+      };
+
+      if (!payload.authors || !payload.title || !payload.year) {
+        showAlert('Preencha autores, título e ano.', 'warning');
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/publications/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          throw new Error('Erro ao atualizar publicação');
+        }
+
+        editModal.hide();
+        await loadPublications();
+        showAlert('Publicação atualizada com sucesso.');
+      } catch (error) {
+        showAlert('Não foi possível atualizar a publicação.', 'danger');
+      }
+    }
+
+    async function deletePublication(id) {
+      if (!confirm('Tem certeza que deseja excluir esta publicação?')) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/publications/${id}`, { method: 'DELETE' });
+        if (!response.ok) {
+          throw new Error('Erro ao excluir');
+        }
+        await loadPublications();
+        showAlert('Publicação excluída com sucesso.');
+      } catch (error) {
+        showAlert('Não foi possível excluir a publicação.', 'danger');
+      }
+    }
+
+    function handleListClick(event) {
+      const editBtn = event.target.closest('.edit-pub-btn');
+      const deleteBtn = event.target.closest('.delete-pub-btn');
+
+      if (editBtn) {
+        const id = editBtn.getAttribute('data-id');
+        openEditModal(id);
+      } else if (deleteBtn) {
+        const id = deleteBtn.getAttribute('data-id');
+        deletePublication(id);
+      }
+    }
+
+    updateButton.addEventListener('click', () => {
+      const id = updateButton.dataset.id;
+      if (id) {
+        updatePublication(id);
+      }
+    });
+
+    function generateReferencesPDF() {
+      if (!publicationsCache.length) {
+        showAlert('Não há publicações para exportar.', 'warning');
+        return;
+      }
+
+      const jspdf = window.jspdf;
+      if (!jspdf || !jspdf.jsPDF) {
+        showAlert('Biblioteca jsPDF não carregada.', 'danger');
+        return;
+      }
+
+      const { jsPDF } = jspdf;
+      const doc = new jsPDF();
+      doc.setFont('times', 'normal');
+      doc.setFontSize(12);
+
+      const leftMargin = 20;
+      const rightMargin = 20;
+      const indent = 5;
+      const docWidth = doc.internal.pageSize.getWidth();
+      const textWidth = docWidth - leftMargin - rightMargin;
+      const indentedTextWidth = textWidth - indent;
+      const lineHeight = 6;
+      const spaceBetweenEntries = 4;
+
+      const publications = [...publicationsCache].sort((a, b) => (b.year || 0) - (a.year || 0));
+      const wosPublications = publications.filter((pub) => pub.journal_type === 'WOS');
+      const scopusPublications = publications.filter((pub) => pub.journal_type === 'SCOPUS');
+      const otherPublications = publications.filter(
+        (pub) => pub.journal_type !== 'WOS' && pub.journal_type !== 'SCOPUS'
+      );
+
+      let y = leftMargin;
+
+      const renderSection = (docInstance, title, pubs, startY) => {
+        let currentY = startY;
+        docInstance.setFontSize(16);
+        docInstance.text(title, leftMargin, currentY);
+        currentY += 10;
+        docInstance.setFontSize(12);
+
+        if (!pubs.length) {
+          docInstance.text('Nenhuma publicação nesta categoria.', leftMargin, currentY);
+          currentY += 10;
+          return currentY;
+        }
+
+        pubs.forEach((pub) => {
+          if (currentY > 280) {
+            docInstance.addPage();
+            currentY = leftMargin;
+            docInstance.setFontSize(12);
+          }
+
+          const type = pub.journal_type || null;
+          let metricLabel = 'Métrica';
+          let quartileLabel = 'Quartil';
+
+          if (type === 'WOS') {
+            metricLabel = 'Impact Factor';
+            quartileLabel = 'Quartil JCR';
+          } else if (type === 'SCOPUS') {
+            metricLabel = 'CiteScore';
+            quartileLabel = 'Quartil SJR';
+          }
+
+          const line1 = `${pub.authors || 'Autores desconhecidos'} (${pub.year || 's.d.'}). ${pub.title || 'Título indisponível'}.`;
+          const journalName = pub.journal_name || 'Revista desconhecida';
+          const metricValue = pub.journal_impact_factor ?? 'N/A';
+          const quartileValue = pub.journal_quartile || 'N/A';
+          const line2 = `${journalName}. (${metricLabel}: ${metricValue}, ${quartileLabel}: ${quartileValue})`;
+
+          const wrappedLine1 = docInstance.splitTextToSize(line1, textWidth);
+          docInstance.text(wrappedLine1, leftMargin, currentY, { maxWidth: textWidth });
+          currentY += wrappedLine1.length * lineHeight;
+
+          const wrappedLine2 = docInstance.splitTextToSize(line2, indentedTextWidth);
+          docInstance.text(wrappedLine2, leftMargin + indent, currentY, { maxWidth: indentedTextWidth });
+          currentY += wrappedLine2.length * lineHeight;
+
+          if (pub.doi) {
+            const doiText = `DOI: ${pub.doi}`;
+            const wrappedDoi = docInstance.splitTextToSize(doiText, indentedTextWidth);
+            docInstance.text(wrappedDoi, leftMargin + indent, currentY, { maxWidth: indentedTextWidth });
+            currentY += wrappedDoi.length * lineHeight;
+          }
+
+          currentY += spaceBetweenEntries;
+        });
+
+        return currentY;
+      };
+
+      y = renderSection(doc, 'Publicações WOS', wosPublications, y);
+      y += 10;
+      y = renderSection(doc, 'Publicações SCOPUS', scopusPublications, y);
+
+      if (otherPublications.length) {
+        y += 10;
+        y = renderSection(doc, 'Outras Publicações', otherPublications, y);
+      }
+
+      doc.save('referencias_bibliograficas.pdf');
+      showAlert('PDF gerado com sucesso!', 'success');
+    }
+
+    wosList.addEventListener('click', handleListClick);
+    scopusList.addEventListener('click', handleListClick);
+    exportButton.addEventListener('click', generateReferencesPDF);
+
+    (async function init() {
+      await loadJournals();
+      await loadPublications();
+    })();
+  </script>
+</body>
+</html>

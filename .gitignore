@@ -1,0 +1,18 @@
+# Dependências do Node
+node_modules/
+
+# Arquivos de ambiente - Contém segredos!
+.env
+
+# Arquivos de banco de dados SQLite
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+npm-debug.log*
+*.log
+
+# Arquivos do Sistema Operacional
+.DS_Store
+Thumbs.db

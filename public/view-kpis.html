@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KPIs de Publicações</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-light">
+  <div class="container py-5">
+    <a class="btn btn-link mb-3" href="/index.html">&larr; Voltar ao Menu</a>
+    <h2 class="mb-4">KPIs por Intervalo de Anos</h2>
+    <div id="kpi-alert"></div>
+
+    <div class="card shadow-sm mb-4">
+      <div class="card-body">
+        <div class="row g-3 align-items-end">
+          <div class="col-md-4">
+            <label class="form-label" for="start-year">Ano Inicial</label>
+            <input type="number" class="form-control" id="start-year" min="1900" max="2100" value="2020">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" for="end-year">Ano Final</label>
+            <input type="number" class="form-control" id="end-year" min="1900" max="2100" value="2025">
+          </div>
+          <div class="col-md-4">
+            <button class="btn btn-primary w-100" id="filter-kpi-button">Gerar KPIs</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="kpi-table-container" class="mb-4"></div>
+
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title">Soma das Métricas</h5>
+        <canvas id="metricsSumChart" height="140"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const startYearInput = document.getElementById('start-year');
+    const endYearInput = document.getElementById('end-year');
+    const filterButton = document.getElementById('filter-kpi-button');
+    const tableContainer = document.getElementById('kpi-table-container');
+    const alertBox = document.getElementById('kpi-alert');
+    let metricsChartInstance = null;
+
+    function showAlert(message, type = 'info') {
+      alertBox.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show" role="alert">
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>`;
+    }
+
+    function renderKPITable(yearlyData, totalPapers) {
+      if (!yearlyData.length) {
+        tableContainer.innerHTML = '<div class="alert alert-warning">Nenhuma publicação encontrada para o intervalo selecionado.</div>';
+        return;
+      }
+
+      let rowsHtml = '';
+      yearlyData.forEach((row) => {
+        const wos = row.wos_count || 0;
+        const scopus = row.scopus_count || 0;
+        rowsHtml += `
+          <tr>
+            <td>${row.year}</td>
+            <td>${wos}</td>
+            <td>${scopus}</td>
+            <td>${wos + scopus}</td>
+          </tr>
+        `;
+      });
+
+      const tableHtml = `
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="table table-striped table-sm mb-0">
+                <thead>
+                  <tr>
+                    <th>Ano</th>
+                    <th>Publicações WOS</th>
+                    <th>Publicações SCOPUS</th>
+                    <th>Total/Ano</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rowsHtml}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <th colspan="3">Total no Período</th>
+                    <th>${totalPapers || 0}</th>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+      `;
+
+      tableContainer.innerHTML = tableHtml;
+    }
+
+    function renderMetricsChart(rangeTotals, startYear, endYear) {
+      const ctx = document.getElementById('metricsSumChart');
+      if (!ctx) return;
+
+      const existingChart = Chart.getChart('metricsSumChart');
+      if (existingChart) {
+        existingChart.destroy();
+      }
+
+      metricsChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ['Soma Impact Factor (WOS)', 'Soma CiteScore (SCOPUS)'],
+          datasets: [
+            {
+              data: [rangeTotals.totalImpactFactor || 0, rangeTotals.totalCiteScore || 0],
+              backgroundColor: ['rgba(54, 162, 235, 0.7)', 'rgba(255, 159, 64, 0.7)']
+            }
+          ]
+        },
+        options: {
+          plugins: {
+            title: {
+              display: true,
+              text: `Soma das Métricas (${startYear} - ${endYear})`
+            },
+            legend: { display: false }
+          },
+          scales: {
+            y: {
+              beginAtZero: true
+            }
+          }
+        }
+      });
+    }
+
+    async function fetchKPIs() {
+      const startYear = Number(startYearInput.value);
+      const endYear = Number(endYearInput.value);
+
+      if (!Number.isFinite(startYear) || !Number.isFinite(endYear)) {
+        showAlert('Informe anos válidos.', 'warning');
+        return;
+      }
+
+      if (startYear > endYear) {
+        showAlert('O ano inicial deve ser menor ou igual ao ano final.', 'warning');
+        return;
+      }
+
+      try {
+        showAlert('Carregando KPIs...', 'info');
+        const response = await fetch(`/api/kpis?startYear=${startYear}&endYear=${endYear}`);
+        if (!response.ok) {
+          throw new Error('Falha ao carregar KPIs');
+        }
+        const data = await response.json();
+        renderKPITable(data.yearlyBreakdown || [], data.rangeTotals?.totalPapers || 0);
+        renderMetricsChart(data.rangeTotals || {}, startYear, endYear);
+        showAlert('KPIs atualizados com sucesso!', 'success');
+      } catch (error) {
+        console.error(error);
+        tableContainer.innerHTML = '';
+        showAlert('Erro ao carregar KPIs para o intervalo informado.', 'danger');
+      }
+    }
+
+    filterButton.addEventListener('click', fetchKPIs);
+  </script>
+</body>
+</html>
